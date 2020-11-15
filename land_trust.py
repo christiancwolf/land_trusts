@@ -7,7 +7,8 @@ LAND_TRUST_PATH = "land_trusts/"
 STATE_PATH = "states/"
 STATE_IDS = [
     "virginia51",
-    "colorado8"
+    "colorado8",
+    "utah49"
 ]
 
 def parse_contact(table):
@@ -41,6 +42,18 @@ def parse_acres(table):
         vals = [td.text.strip() for td in row.find_all("td")]
         data.append(dict(zip(keys, vals)))
     return data
+
+def parse_counties(div):
+    data = []
+    states = div.find_all("p", {"class": "counties_header"})
+    states = [state.text.strip()[:-1] for state in states]
+    
+    counties = []
+    county_lists = div.find_all("div", {"class": "counties_list"})
+    for county_list in county_lists:
+        counties.append([county.text.strip() for county in county_list.find_all("a")])
+        
+    return dict(zip(states, counties))
 
 def parse_profile(id = None, path = None):
     data = {}
@@ -79,6 +92,13 @@ def parse_profile(id = None, path = None):
         acres_raw = soup.find("div", {"class":"acres_bg"}).find("table")
         acres = parse_acres(acres_raw)
         data["acres"] = acres
+    except:
+        pass
+    
+    try:
+        counties_raw = soup.find("div", {"class":"counties_bg"})
+        counties = parse_counties(counties_raw)
+        data["counties"] = counties
     except:
         pass
     

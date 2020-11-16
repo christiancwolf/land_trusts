@@ -11,9 +11,9 @@ STATE_IDS = [
     "utah49"
 ]
 
-def parse_contact(table):
+def parse_contact(soup):
     data = {}
-    rows = table.find_all("tr")
+    rows = soup.find("div", {"class":"contact_bg"}).find("table").find_all("tr")
     name = rows[0].text.strip()
     cols = rows[1].find_all("td")
     address = cols[0].text.strip()
@@ -25,31 +25,31 @@ def parse_contact(table):
         data[key.strip()] = val.strip()
     return data
 
-def parse_demographics(table):
+def parse_demographics(soup):
     data = {}
-    rows = table.find_all("tr")
+    rows = soup.find("div", {"class":"demographics_bg"}).find("table").find_all("tr")
     for row in rows:
         key = row.find("th").text.strip()
         val = row.find("td").text.strip()
         data[key] = val
     return data
 
-def parse_acres(table): 
+def parse_acres(soup): 
     data = []
-    rows = table.find_all("tr")
+    rows = soup.find("div", {"class":"acres_bg"}).find("table").find_all("tr")
     keys = [th.text.strip() for th in rows[0].find_all("th")]
     for row in rows[1:]:
         vals = [td.text.strip() for td in row.find_all("td")]
         data.append(dict(zip(keys, vals)))
     return data
 
-def parse_counties(div):
-    data = []
-    states = div.find_all("p", {"class": "counties_header"})
+def parse_counties(soup):
+    counties_soup = soup.find("div", {"class":"counties_bg"})
+    states = counties_soup.find_all("p", {"class": "counties_header"})
     states = [state.text.strip()[:-1] for state in states]
     
     counties = []
-    county_lists = div.find_all("div", {"class": "counties_list"})
+    county_lists = counties_soup.find_all("div", {"class": "counties_list"})
     for county_list in county_lists:
         counties.append([county.text.strip() for county in county_list.find_all("a")])
         
@@ -75,30 +75,22 @@ def parse_profile(id = None, path = None):
     data["name"] = name
     
     try:
-        contact_raw = soup.find("div", {"class":"contact_bg"}).find("table")
-        contact = parse_contact(contact_raw)
-        data["contact"] = contact
+        data["contact"] = parse_contact(soup)
     except:
         pass
     
     try:
-        demographics_raw = soup.find("div", {"class":"demographics_bg"}).find("table")
-        demographics = parse_demographics(demographics_raw)
-        data["demographics"] = demographics
+        data["demographics"] = parse_demographics(soup)
     except:
         pass
     
     try:
-        acres_raw = soup.find("div", {"class":"acres_bg"}).find("table")
-        acres = parse_acres(acres_raw)
-        data["acres"] = acres
+        data["acres"] = parse_acres(soup)
     except:
         pass
     
     try:
-        counties_raw = soup.find("div", {"class":"counties_bg"})
-        counties = parse_counties(counties_raw)
-        data["counties"] = counties
+        data["counties"] = parse_counties(soup)
     except:
         pass
     

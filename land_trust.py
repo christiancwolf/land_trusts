@@ -1,110 +1,62 @@
 from bs4 import BeautifulSoup
 import requests
 from pprint import pprint
+from re import sub
+from selenium import webdriver
+import time
 
-URL = "https://findalandtrust.org/"
-LAND_TRUST_PATH = "land_trusts/"
-STATE_PATH = "states/"
-STATE_IDS = [
-    "alabama1",
-    "alaska2",
-    "arizona4",
-    "arkansas5",
-    "california6",
-    "colorado8",
-    "connecticut9",
-    "delaware10",
-    "florida12",
-    "georgia13",
-    "hawaii15",
-    "idaho16",
-    "illinois17",
-    "indiana18",
-    "iowa19",
-    "kansas20",
-    "kentucky21",
-    "louisiana22",
-    "maine23",
-    "maryland24",
-    "massachusetts25",
-    "michigan26",
-    "minnesota27",
-    "mississippi28",
-    "missouri29",
-    "montana30",
-    "nebraska31",
-    "nevada32",
-    "newhampshire33",
-    "newjersey34",
-    "newmexico35",
-    "newyork36",
-    "northcarolina37",
-    "northdakota38",
-    "ohio39",
-    "oklahoma40",
-    "oregon41",
-    "pennsylvania42",
-    "rhodeisland44",
-    "southcarolina45",
-    "southdakota46",
-    "tennessee47",
-    "texas48",
-    "utah49",
-    "vermont50",
-    "virginia51",
-    "washington53",
-    "westvirginia54",
-    "wisconsin55",
-    "wyoming56",
-]
+URL = "https://findalandtrust.org"
+LAND_TRUST_PATH = "/land-trusts/explore/"
+
+
+def snake_case(s):
+    return "_".join(
+        sub(
+            "([A-Z][a-z]+)", r" \1", sub("([A-Z]+)", r" \1", s.replace("-", " "))
+        ).split()
+    ).lower()
 
 
 def parse_contact(soup):
-    data = {}
-    rows = soup.find("div", {"class": "contact_bg"}).find("table").find_all("tr")
-    name = rows[0].text.strip()
-    cols = rows[1].find_all("td")
-    address = cols[0].text.strip()
-    data["address"] = address
-    contact = cols[1].text.strip()
-    split_contact = contact.split("\n")
-    for c in split_contact:
-        key, val = c.split(":")
-        data[key.strip()] = val.strip()
+    data = {
+        "name": soup.find("div", {"class": "p-name"}).text.strip(),
+        "street_address": soup.find("div", {"class": "p-street-address"}).text.strip(),
+        "locality": soup.find("span", {"class": "p-locality"}).text.strip(),
+        "postal_code": soup.find("span", {"class": "p-postal-code"}).text.strip(),
+        "region": soup.find("span", {"class": "p-region"}).text.strip(),
+    }
+
+    sidebar_links = soup.find("div", {"class": "sidebar"}).find_all("a")
+    phone = [x["href"] for x in sidebar_links if x["href"].startswith("tel:")][0]
+    email = [
+        x["href"] for x in sidebar_links if x["href"].startswith("mailto:")
+    ]  # These rat bastards are protecting the email so I can't get it
+
+    data["phone"] = phone
+
     return data
 
 
 def parse_demographics(soup):
     data = {}
-    rows = soup.find("div", {"class": "demographics_bg"}).find("table").find_all("tr")
+    rows = soup.find("ul", {"class": "list mt-3"}).find_all("li")
     for row in rows:
-        key = row.find("th").text.strip()
-        val = row.find("td").text.strip()
-        data[key] = val
+        k = row.find("div", {"class": "label"}).text.strip()
+        v = row.find("div", {"class": "rich-text body"}).text.strip()
+        data[snake_case(k)] = v
+
     return data
 
 
-def parse_acres(soup):
-    data = []
-    rows = soup.find("div", {"class": "acres_bg"}).find("table").find_all("tr")
-    keys = [th.text.strip() for th in rows[0].find_all("th")]
-    for row in rows[1:]:
-        vals = [td.text.strip() for td in row.find_all("td")]
-        data.append(dict(zip(keys, vals)))
+def parse_features(soup):
+    features = soup.find_all(
+        "div",
+        {
+            "class": "item item-attribute mt-6 has-icon orientation-horizontal size-small"
+        },
+    )
+    data = [f.find("header").text.strip() for f in features]
     return data
-
-
-def parse_counties(soup):
-    counties_soup = soup.find("div", {"class": "counties_bg"})
-    states = counties_soup.find_all("p", {"class": "counties_header"})
-    states = [state.text.strip()[:-1] for state in states]
-
-    counties = []
-    county_lists = counties_soup.find_all("div", {"class": "counties_list"})
-    for county_list in county_lists:
-        counties.append([county.text.strip() for county in county_list.find_all("a")])
-
-    return dict(zip(states, counties))
 
 
 def parse_profile(id=None, path=None):
@@ -116,15 +68,19 @@ def parse_profile(id=None, path=None):
         id = path.split("/")[2]
     print(endpoint)
 
-    response = requests.get(endpoint)
-    response.raise_for_status
+    data["id"] = endpoint.split("/")[-1]
+    data["url"] = endpoint
 
-    soup = BeautifulSoup(response.content, "html.parser")
+    try:
+        response = requests.get(endpoint)
+        response.raise_for_status
 
-    data["id"] = id
+        soup = BeautifulSoup(response.content, "html.parser")
 
-    name = soup.find("div", {"class": "top_header"}).find("h2").text.strip()
-    data["name"] = name
+        name = soup.find("h1", {"class": "title"}).text.strip()
+        data["name"] = name
+    except:
+        return data
 
     try:
         data["contact"] = parse_contact(soup)
@@ -137,40 +93,119 @@ def parse_profile(id=None, path=None):
         pass
 
     try:
-        data["acres"] = parse_acres(soup)
-    except:
-        pass
-
-    try:
-        data["counties"] = parse_counties(soup)
+        data["features"] = parse_features(soup)
     except:
         pass
 
     return data
 
 
-def get_land_trut_paths_by_state_id(id):
-    endpoint = URL + STATE_PATH + str(id) + "/" + LAND_TRUST_PATH
-    print(endpoint)
+def get_land_trusts():
+    endpoint = URL + LAND_TRUST_PATH
+    nearby = "nearby=false"
+    iter_endpoint = endpoint + "?" + nearby
+    page = 1
 
-    response = requests.get(endpoint)
-    response.raise_for_status
+    # Must create a selenium browser because the content is loaded after page load with javascript
+    browser = webdriver.Firefox()
 
-    soup = BeautifulSoup(response.content, "html.parser")
-    land_trusts = soup.find("table", {"class": "land_trusts"})
+    empty_response = False  # Loop exit condition
 
-    return [a["href"] for a in land_trusts.find_all("a", href=True)]
+    data = []  # Return object
+
+    while not empty_response:
+        print(iter_endpoint)
+
+        # Get page and wait for load
+        browser.get(iter_endpoint)
+        time.sleep(1)
+
+        # Load page contents
+        soup = BeautifulSoup(browser.page_source, "html.parser")
+
+        # Find all links to land trusts
+        land_trusts = soup.find("div", {"class": "site container"}).find_all(
+            "a", href=True
+        )
+        land_trusts = [x["href"] for x in land_trusts]
+        land_trusts = set([x for x in land_trusts if x.startswith(LAND_TRUST_PATH)])
+
+        # Aggregate results
+        data += land_trusts
+        # Exit if no land trusts were found
+        empty_response = len(land_trusts) == 0
+
+        # Get next page
+        page += 1
+        iter_endpoint = endpoint + "?" + f"page={page}" + "&" + nearby
+
+    return data
+
+
+headers = "\t".join(
+    [
+        "id",
+        "url",
+        "name",
+        "name",
+        "street_address",
+        "locality",
+        "region",
+        "postal_code",
+        "adopted_2017_standards_&_practices",
+        "number_of_board_members",
+        "number_of_full_time_staff",
+        "number_of_supporters",
+        "number_of_volunteers",
+        "year_first_joined",
+        "features",
+    ]
+)
+
+
+def convert_to_csv(trust_info):
+    return "\t".join(
+        [
+            trust_info.get("id"),
+            trust_info.get("url"),
+            trust_info.get("name", ""),
+            trust_info.get("contact", {}).get("name", ""),
+            trust_info.get("contact", {}).get("street_address", ""),
+            trust_info.get("contact", {}).get("locality", ""),
+            trust_info.get("contact", {}).get("region", ""),
+            trust_info.get("contact", {}).get("postal_code", ""),
+            trust_info.get("demographics", {}).get(
+                "adopted_2017_standards_&_practices", ""
+            ),
+            trust_info.get("demographics", {}).get("number_of_board_members", ""),
+            trust_info.get("demographics", {}).get("number_of_full_time_staff", ""),
+            trust_info.get("demographics", {}).get("number_of_supporters", ""),
+            trust_info.get("demographics", {}).get("number_of_volunteers", ""),
+            trust_info.get("demographics", {}).get("year_first_joined", ""),
+            "|".join(trust_info.get("features", [])),
+        ]
+    )
 
 
 def main():
-    data = {}
+    data = []
 
-    for state_id in STATE_IDS:
-        paths = get_land_trut_paths_by_state_id(state_id)
-        for path in paths:
-            profile = parse_profile(path=path)
-            data[profile["id"]] = profile
-    pprint(data)
+    # Get paths to all land trusts on page
+    land_trusts = get_land_trusts()
+    print(f"Number of land trusts found: {len(land_trusts)}")
+
+    # Get land trust info from path
+    for land_trust in land_trusts:
+        info = parse_profile(path=land_trust)
+        data.append(info)
+
+    # pprint(data)
+
+    # Write CSV
+    with open("land_trust.csv", "w") as file:
+        file.write(headers + "\n")
+        for d in data:
+            file.write(convert_to_csv(d) + "\n")
 
 
 if __name__ == "__main__":

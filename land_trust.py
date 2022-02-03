@@ -58,6 +58,14 @@ def parse_features(soup):
     data = [f.find("header").text.strip() for f in features]
     return data
 
+def parse_land_protected(soup):
+    data = {}
+    data["acres"] = soup.find("div", {"class": "acres-protected"}).find("strong").text.strip()
+    try:
+        data["counties"] = soup.find("div", {"class": "relative"}).find("p").text.strip()
+    except:
+        pass
+    return data
 
 def parse_profile(id=None, path=None):
     data = {}
@@ -97,6 +105,11 @@ def parse_profile(id=None, path=None):
     except:
         pass
 
+    try:
+        data["land_protected"] = parse_land_protected(soup)
+    except:
+        pass
+    
     return data
 
 
@@ -132,9 +145,10 @@ def get_land_trusts():
 
         # Aggregate results
         data += land_trusts
+        
         # Exit if no land trusts were found
         empty_response = len(land_trusts) == 0
-
+    
         # Get next page
         page += 1
         iter_endpoint = endpoint + "?" + f"page={page}" + "&" + nearby
@@ -152,13 +166,15 @@ headers = "\t".join(
         "locality",
         "region",
         "postal_code",
+        "acres",
+        "counties",
         "adopted_2017_standards_&_practices",
         "number_of_board_members",
         "number_of_full_time_staff",
         "number_of_supporters",
         "number_of_volunteers",
         "year_first_joined",
-        "features",
+        "features"
     ]
 )
 
@@ -174,6 +190,8 @@ def convert_to_csv(trust_info):
             trust_info.get("contact", {}).get("locality", ""),
             trust_info.get("contact", {}).get("region", ""),
             trust_info.get("contact", {}).get("postal_code", ""),
+            trust_info.get("land_protected", {}).get("acres", ""),
+            trust_info.get("land_protected", {}).get("counties", ""),
             trust_info.get("demographics", {}).get(
                 "adopted_2017_standards_&_practices", ""
             ),
